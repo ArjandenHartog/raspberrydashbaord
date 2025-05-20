@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Dashboard
+Comment=Start Dashboard in Fullscreen
+Exec=python3 /pad/naar/je/main.py
+Terminal=false
+X-GNOME-Autostart-enabled=true 

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import webbrowser
+import platform
 
 # --- Configuratie ---
 HTML_FILE = "index.html"
@@ -18,6 +19,32 @@ CHROMIUM_PATHS = [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ]
 
+def disable_screen_blanking():
+    """Schakelt schermbeveiliging en energiebeheer uit op Raspberry Pi."""
+    if platform.system() == "Linux":
+        try:
+            # Schakel DPMS (energiebeheer) uit
+            subprocess.run(['xset', '-dpms'], check=True)
+            # Schakel screensaver uit
+            subprocess.run(['xset', 's', 'off'], check=True)
+            # Schakel screen blanking uit
+            subprocess.run(['xset', 's', 'noblank'], check=True)
+            print("Schermbeveiliging en energiebeheer uitgeschakeld")
+            
+            # Voeg de instellingen toe aan /etc/xdg/lxsession/LXDE-pi/autostart voor persistentie
+            autostart_path = "/etc/xdg/lxsession/LXDE-pi/autostart"
+            if os.path.exists(autostart_path):
+                try:
+                    with open(autostart_path, 'a') as f:
+                        f.write("\n@xset s off\n@xset -dpms\n@xset s noblank\n")
+                    print("Instellingen toegevoegd aan autostart")
+                except PermissionError:
+                    print("Let op: Kon autostart niet aanpassen. Voer het script uit met sudo voor permanente instellingen.")
+        except subprocess.CalledProcessError as e:
+            print(f"Waarschuwing: Kon schermbeveiliging niet uitschakelen: {e}")
+        except FileNotFoundError:
+            print("Waarschuwing: xset commando niet gevonden. Is X11 geïnstalleerd?")
+
 def find_chromium():
     """Zoekt naar een bestaand Chromium/Chrome executable."""
     for path in CHROMIUM_PATHS:
@@ -26,6 +53,9 @@ def find_chromium():
     return None
 
 def main():
+    # Schakel eerst schermbeveiliging uit
+    disable_screen_blanking()
+    
     html_file_path = os.path.abspath(HTML_FILE)
 
     if not os.path.exists(html_file_path):
@@ -38,21 +68,24 @@ def main():
     if chromium_executable:
         print(f"Chromium gevonden op: {chromium_executable}")
         # Commando voor kiosk modus met specifieke resolutie
-        # --window-size en --window-position zijn wellicht niet altijd perfect op alle systemen/window managers
-        # --force-device-scale-factor=1 kan helpen bij HiDPI schermen indien nodig
         cmd = [
             chromium_executable,
+            "--start-fullscreen",  # Force fullscreen
+            "--kiosk",  # Kiosk mode
+            "--noerrdialogs",  # Voorkom error dialogs
+            "--disable-translate",  # Schakel vertaal popup uit
+            "--disable-features=TranslateUI",  # Schakel vertaal UI uit
+            "--disable-pinch",  # Voorkom zoomen met touch/trackpad
+            "--overscroll-history-navigation=0",  # Voorkom swipe navigatie
+            "--disable-infobars",  # Verberg infobars
+            "--check-for-update-interval=31536000",  # Check voor updates maar 1x per jaar
             f"--window-size={TARGET_RESOLUTION}",
             f"--window-position=0,0",
-            "--kiosk",
-            # "--incognito", # Optioneel: start in incognito modus
-            # "--disable-pinch", # Optioneel: voorkom zoomen met touch
-            # "--overscroll-history-navigation=0", # Optioneel: voorkom swipe navigatie
-            # "--disable-features=TranslateUI", # Optioneel: verberg "pagina vertalen" pop-up
             f'file:///{html_file_path}'
         ]
         print(f"Starten van Chromium met commando: {' '.join(cmd)}")
         try:
+            # Start Chromium en wacht niet op het proces (non-blocking)
             subprocess.Popen(cmd)
             print(f"{HTML_FILE} zou nu moeten openen in Chromium in kiosk modus.")
             print(f"Resolutie ingesteld op: {TARGET_RESOLUTION}")
