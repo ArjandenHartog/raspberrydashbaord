@@ -2,22 +2,50 @@ import os
 import subprocess
 import webbrowser
 import platform
+import sys
+import time
 
 # --- Configuratie ---
 HTML_FILE = "index.html"
 TARGET_RESOLUTION = "2560,1080" # Breedte,Hoogte
+DEBUG = True  # Debug modus aan
 
 # Pad naar Chromium executable (pas aan indien nodig voor jouw systeem)
 # Voor Raspberry Pi OS is dit meestal '/usr/bin/chromium-browser'
 # Voor Windows, kun je het pad naar chrome.exe opgeven, bijv. 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 # Voor macOS, bijv. '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 CHROMIUM_PATHS = [
+    # Raspberry Pi / Linux paths
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
+    '/usr/bin/chromium-browser-stable',
+    '/snap/bin/chromium',
+    # Windows paths
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    # macOS path
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ]
+
+def debug_print(message):
+    """Print debug informatie als DEBUG aan staat."""
+    if DEBUG:
+        print(f"[DEBUG] {message}")
+
+def check_system_info():
+    """Controleer en print systeem informatie voor debugging."""
+    debug_print(f"Besturingssysteem: {platform.system()} {platform.release()}")
+    debug_print(f"Python versie: {sys.version}")
+    debug_print(f"Werkmap: {os.getcwd()}")
+    
+    # Check DISPLAY variabele op Linux
+    if platform.system() == "Linux":
+        display = os.environ.get('DISPLAY')
+        debug_print(f"DISPLAY environment: {display}")
+        
+        # Check of we in een GUI sessie zitten
+        desktop_session = os.environ.get('DESKTOP_SESSION')
+        debug_print(f"Desktop sessie: {desktop_session}")
 
 def disable_screen_blanking():
     """Schakelt schermbeveiliging en energiebeheer uit op Raspberry Pi."""
@@ -29,7 +57,7 @@ def disable_screen_blanking():
             subprocess.run(['xset', 's', 'off'], check=True)
             # Schakel screen blanking uit
             subprocess.run(['xset', 's', 'noblank'], check=True)
-            print("Schermbeveiliging en energiebeheer uitgeschakeld")
+            debug_print("Schermbeveiliging en energiebeheer uitgeschakeld")
             
             # Voeg de instellingen toe aan /etc/xdg/lxsession/LXDE-pi/autostart voor persistentie
             autostart_path = "/etc/xdg/lxsession/LXDE-pi/autostart"
@@ -37,26 +65,57 @@ def disable_screen_blanking():
                 try:
                     with open(autostart_path, 'a') as f:
                         f.write("\n@xset s off\n@xset -dpms\n@xset s noblank\n")
-                    print("Instellingen toegevoegd aan autostart")
+                    debug_print("Instellingen toegevoegd aan autostart")
                 except PermissionError:
-                    print("Let op: Kon autostart niet aanpassen. Voer het script uit met sudo voor permanente instellingen.")
+                    debug_print("Let op: Kon autostart niet aanpassen. Voer het script uit met sudo voor permanente instellingen.")
         except subprocess.CalledProcessError as e:
-            print(f"Waarschuwing: Kon schermbeveiliging niet uitschakelen: {e}")
+            debug_print(f"Waarschuwing: Kon schermbeveiliging niet uitschakelen: {e}")
         except FileNotFoundError:
-            print("Waarschuwing: xset commando niet gevonden. Is X11 geïnstalleerd?")
+            debug_print("Waarschuwing: xset commando niet gevonden. Is X11 geïnstalleerd?")
 
 def find_chromium():
     """Zoekt naar een bestaand Chromium/Chrome executable."""
+    debug_print("Zoeken naar Chromium/Chrome executable...")
     for path in CHROMIUM_PATHS:
+        debug_print(f"Controleren: {path}")
         if os.path.exists(path):
+            debug_print(f"Gevonden: {path}")
             return path
+    debug_print("Geen Chromium/Chrome executable gevonden in standaard locaties")
     return None
 
+def try_alternative_chromium_start(html_file_path):
+    """Probeer alternatieve manieren om Chromium te starten."""
+    debug_print("Proberen alternatieve manieren om Chromium te starten...")
+    
+    try:
+        # Methode 1: Via shell command
+        cmd = f"DISPLAY=:0 chromium-browser --kiosk --start-fullscreen '{html_file_path}'"
+        debug_print(f"Probeer methode 1: {cmd}")
+        subprocess.Popen(cmd, shell=True)
+        return True
+    except Exception as e:
+        debug_print(f"Methode 1 gefaald: {e}")
+    
+    try:
+        # Methode 2: Direct command zonder shell
+        cmd = ["chromium-browser", "--kiosk", "--start-fullscreen", html_file_path]
+        debug_print(f"Probeer methode 2: {' '.join(cmd)}")
+        subprocess.Popen(cmd)
+        return True
+    except Exception as e:
+        debug_print(f"Methode 2 gefaald: {e}")
+    
+    return False
+
 def main():
+    check_system_info()
+    
     # Schakel eerst schermbeveiliging uit
     disable_screen_blanking()
     
     html_file_path = os.path.abspath(HTML_FILE)
+    debug_print(f"HTML bestand pad: {html_file_path}")
 
     if not os.path.exists(html_file_path):
         print(f"Error: {HTML_FILE} niet gevonden op {html_file_path}")
@@ -66,7 +125,7 @@ def main():
     chromium_executable = find_chromium()
 
     if chromium_executable:
-        print(f"Chromium gevonden op: {chromium_executable}")
+        debug_print(f"Chromium gevonden op: {chromium_executable}")
         # Commando voor kiosk modus met specifieke resolutie
         cmd = [
             chromium_executable,
@@ -83,21 +142,35 @@ def main():
             f"--window-position=0,0",
             f'file:///{html_file_path}'
         ]
-        print(f"Starten van Chromium met commando: {' '.join(cmd)}")
+        debug_print(f"Starten van Chromium met commando: {' '.join(cmd)}")
         try:
             # Start Chromium en wacht niet op het proces (non-blocking)
-            subprocess.Popen(cmd)
-            print(f"{HTML_FILE} zou nu moeten openen in Chromium in kiosk modus.")
-            print(f"Resolutie ingesteld op: {TARGET_RESOLUTION}")
-            print("Druk op ALT+F4 (of equivalente toetscombinatie voor jouw OS) om de kiosk modus te sluiten.")
+            process = subprocess.Popen(cmd)
+            debug_print(f"Chromium process ID: {process.pid}")
+            time.sleep(2)  # Wacht even om te zien of het process blijft draaien
+            
+            if process.poll() is not None:  # Process is al gestopt
+                debug_print("Chromium process stopte onverwacht, probeer alternatieve methode")
+                if not try_alternative_chromium_start(html_file_path):
+                    print("Kon Chromium niet starten met standaard of alternatieve methoden")
+            else:
+                print(f"{HTML_FILE} geopend in Chromium kiosk modus")
+                print(f"Resolutie ingesteld op: {TARGET_RESOLUTION}")
+                print("Druk op ALT+F4 (of equivalente toetscombinatie voor jouw OS) om de kiosk modus te sluiten.")
         except Exception as e:
-            print(f"Fout bij het starten van Chromium: {e}")
-            print("Probeer het handmatig te openen of open index.html in je standaard browser.")
-            webbrowser.open(f'file:///{html_file_path}')
+            debug_print(f"Fout bij het starten van Chromium: {str(e)}")
+            print("Probeer alternatieve methode...")
+            if not try_alternative_chromium_start(html_file_path):
+                print("Kon Chromium niet starten. Probeer het bestand handmatig te openen.")
+                webbrowser.open(f'file:///{html_file_path}')
     else:
-        print("Chromium/Chrome niet gevonden op de standaardlocaties.")
-        print(f"Probeer {HTML_FILE} handmatig te openen in je browser.")
-        webbrowser.open(f'file:///{html_file_path}')
+        print("Chromium/Chrome niet gevonden. Controleer of het is geïnstalleerd.")
+        print("Op Raspberry Pi, installeer Chromium met:")
+        print("sudo apt update && sudo apt install -y chromium-browser")
+        
+        response = input("Wil je het bestand in de standaard browser openen? (ja/nee): ")
+        if response.lower() in ['ja', 'j', 'yes', 'y']:
+            webbrowser.open(f'file:///{html_file_path}')
 
 if __name__ == "__main__":
     main() 
