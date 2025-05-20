@@ -32,11 +32,16 @@ def debug_print(message):
     if DEBUG:
         print(f"[DEBUG] {message}")
 
+def is_root():
+    """Check of het script als root draait."""
+    return os.geteuid() == 0 if hasattr(os, 'geteuid') else False
+
 def check_system_info():
     """Controleer en print systeem informatie voor debugging."""
     debug_print(f"Besturingssysteem: {platform.system()} {platform.release()}")
     debug_print(f"Python versie: {sys.version}")
     debug_print(f"Werkmap: {os.getcwd()}")
+    debug_print(f"Draait als root: {is_root()}")
     
     # Check DISPLAY variabele op Linux
     if platform.system() == "Linux":
@@ -84,13 +89,39 @@ def find_chromium():
     debug_print("Geen Chromium/Chrome executable gevonden in standaard locaties")
     return None
 
+def get_chromium_flags():
+    """Bepaal de juiste flags voor Chromium gebaseerd op de uitvoeringscontext."""
+    flags = [
+        "--start-fullscreen",  # Force fullscreen
+        "--kiosk",  # Kiosk mode
+        "--noerrdialogs",  # Voorkom error dialogs
+        "--disable-translate",  # Schakel vertaal popup uit
+        "--disable-features=TranslateUI",  # Schakel vertaal UI uit
+        "--disable-pinch",  # Voorkom zoomen met touch/trackpad
+        "--overscroll-history-navigation=0",  # Voorkom swipe navigatie
+        "--disable-infobars",  # Verberg infobars
+        "--check-for-update-interval=31536000",  # Check voor updates maar 1x per jaar
+    ]
+    
+    # Als we als root draaien, voeg de nodige sandbox flags toe
+    if is_root():
+        flags.extend([
+            "--no-sandbox",
+            "--disable-setuid-sandbox"
+        ])
+    
+    return flags
+
 def try_alternative_chromium_start(html_file_path):
     """Probeer alternatieve manieren om Chromium te starten."""
     debug_print("Proberen alternatieve manieren om Chromium te starten...")
     
+    flags = get_chromium_flags()
+    flags_str = " ".join(flags)
+    
     try:
-        # Methode 1: Via shell command
-        cmd = f"DISPLAY=:0 chromium-browser --kiosk --start-fullscreen '{html_file_path}'"
+        # Methode 1: Via shell command met alle flags
+        cmd = f"DISPLAY=:0 chromium-browser {flags_str} '{html_file_path}'"
         debug_print(f"Probeer methode 1: {cmd}")
         subprocess.Popen(cmd, shell=True)
         return True
@@ -99,7 +130,7 @@ def try_alternative_chromium_start(html_file_path):
     
     try:
         # Methode 2: Direct command zonder shell
-        cmd = ["chromium-browser", "--kiosk", "--start-fullscreen", html_file_path]
+        cmd = ["chromium-browser"] + flags + [html_file_path]
         debug_print(f"Probeer methode 2: {' '.join(cmd)}")
         subprocess.Popen(cmd)
         return True
@@ -126,22 +157,15 @@ def main():
 
     if chromium_executable:
         debug_print(f"Chromium gevonden op: {chromium_executable}")
-        # Commando voor kiosk modus met specifieke resolutie
-        cmd = [
-            chromium_executable,
-            "--start-fullscreen",  # Force fullscreen
-            "--kiosk",  # Kiosk mode
-            "--noerrdialogs",  # Voorkom error dialogs
-            "--disable-translate",  # Schakel vertaal popup uit
-            "--disable-features=TranslateUI",  # Schakel vertaal UI uit
-            "--disable-pinch",  # Voorkom zoomen met touch/trackpad
-            "--overscroll-history-navigation=0",  # Voorkom swipe navigatie
-            "--disable-infobars",  # Verberg infobars
-            "--check-for-update-interval=31536000",  # Check voor updates maar 1x per jaar
+        # Basiscommando met alle flags
+        cmd = [chromium_executable] + get_chromium_flags()
+        # Voeg resolutie en bestandspad toe
+        cmd.extend([
             f"--window-size={TARGET_RESOLUTION}",
             f"--window-position=0,0",
             f'file:///{html_file_path}'
-        ]
+        ])
+        
         debug_print(f"Starten van Chromium met commando: {' '.join(cmd)}")
         try:
             # Start Chromium en wacht niet op het proces (non-blocking)
