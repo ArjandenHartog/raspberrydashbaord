@@ -1,0 +1,15 @@
+[Unit]
+Description=Raspberry Pi Dashboard
+After=graphical.target
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStart=/bin/bash /home/pi/raspberrydashboard/start_dashboard.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target 
